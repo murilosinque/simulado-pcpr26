@@ -104,7 +104,10 @@ input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px}
 .tag{font-size:11px;font-weight:600;letter-spacing:.03em;padding:3px 8px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line-soft);color:var(--muted)}
 .tag.disc{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
 .tag.code{font-family:"IBM Plex Mono",monospace}
-.apoio{border-left:3px solid var(--line);padding:2px 0 2px 14px;margin:0 0 14px;color:var(--ink-2);font-size:15px;max-height:340px;overflow:auto}
+.apoio{border-left:3px solid var(--line);padding:2px 0 2px 14px;margin:0 0 14px;color:var(--ink-2);font-size:15px;overflow-x:auto}
+.apoio pre,.enun pre{white-space:pre-wrap;word-break:break-word}
+.qcard{overflow-wrap:anywhere}
+.apoio-ref{font-size:13px;color:var(--muted);border-left:3px solid var(--line-soft);padding:4px 0 4px 14px;margin:0 0 14px;font-style:italic}
 .enun{font-size:17px;line-height:1.6;margin-bottom:16px}
 .enun p,.apoio p{margin:0 0 10px}
 .enun *,.apoio *{text-align:left!important}
@@ -132,6 +135,19 @@ input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px}
 .alt .risca:hover{background:var(--surface-2);color:var(--bad)}
 @media(hover:none){.alt .risca{opacity:.7}}
 .exam-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:18px}
+/* lista contínua de questões */
+.qcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin-bottom:14px;scroll-margin-top:calc(env(safe-area-inset-top,0px) + 70px)}
+.qcard.alvo{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft),var(--shadow)}
+.qnum{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+.qnum b{font-family:Bitter,Georgia,serif;font-size:18px}
+.qnum span{color:var(--muted);font-weight:500;font-size:14px}
+/* barra fixa inferior */
+.barra{position:fixed;left:0;right:0;bottom:0;z-index:50;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:8px 0 calc(8px + env(safe-area-inset-bottom,0px))}
+.barra-in{max-width:1040px;margin:0 auto;padding-inline:16px;display:flex;gap:10px;align-items:center}
+.prog{flex:0 1 180px;height:6px;border-radius:99px;background:var(--line-soft);overflow:hidden;min-width:60px}
+.prog i{display:block;height:100%;width:0;background:var(--accent);border-radius:99px;transition:width .2s}
+#tela-prova{padding-bottom:64px}
+@media(max-width:620px){.barra-in{gap:8px}.prog{flex:0 1 70px}}
 .feedback{margin-top:14px;padding:11px 13px;border-radius:8px;font-size:14.5px;font-weight:600}
 .feedback.ok{background:var(--ok-soft);color:var(--ok)}
 .feedback.bad{background:var(--bad-soft);color:var(--bad)}
@@ -227,10 +243,8 @@ table.res td.n{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabula
 <section id="tela-prova" hidden>
   <div class="exam-grid">
     <div>
-      <div class="card pad" id="qbox"></div>
+      <div id="qbox"></div>
       <div class="exam-actions">
-        <button class="btn" id="btn-prev">← Anterior</button>
-        <button class="btn" id="btn-next">Próxima →</button>
         <span class="spacer"></span>
         <button class="btn primary" id="btn-finalizar">Finalizar e corrigir</button>
       </div>
@@ -240,8 +254,18 @@ table.res td.n{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabula
         <div class="sec-title">Folha de respostas</div>
         <div class="navgrid" id="navgrid"></div>
         <div style="margin-top:10px;font-size:12.5px;color:var(--muted)" id="nav-resumo"></div>
+        <button class="btn sm ghost" id="btn-pular" style="margin-top:10px;width:100%">Ir para a 1ª em branco</button>
       </div>
     </aside>
+  </div>
+  <div class="barra" id="barra" hidden>
+    <div class="barra-in">
+      <span class="prog"><i id="prog-i"></i></span>
+      <span class="chip" id="prog-txt">0 / 0</span>
+      <span class="spacer"></span>
+      <button class="btn sm" id="btn-pular2">1ª em branco</button>
+      <button class="btn sm primary" id="btn-finalizar2">Finalizar</button>
+    </div>
   </div>
 </section>
 
@@ -437,11 +461,11 @@ function abrirProva(){
  tela("tela-prova");
  $("#btn-sair").classList.remove("hid");
  $("#chip-timer").classList.toggle("hid",!ESTADO.cron);
- $("#btn-finalizar").hidden=false;
+ $("#btn-finalizar").hidden=false;$("#barra").hidden=false;
  if(TIMER)clearInterval(TIMER);
  if(ESTADO.cron&&!ESTADO.finalizado){ESTADO.inicio=Date.now()-(ESTADO.decorrido||0);
   TIMER=setInterval(function(){$("#chip-timer").textContent=fmtTempo(Date.now()-ESTADO.inicio)},1000);}
- desenharNav();desenharQuestao();
+ desenharNav();desenharTodas();
 }
 function desenharNav(){
  var g=$("#navgrid");
@@ -452,22 +476,52 @@ function desenharNav(){
   else if(it.resp)cls+=" done";
   return '<button class="'+cls+'" data-i="'+i+'">'+(i+1)+'</button>'
  }).join("");
- $$("#navgrid .nv").forEach(function(b){b.onclick=function(){ESTADO.atual=+b.dataset.i;desenharNav();desenharQuestao()}});
+ $$("#navgrid .nv").forEach(function(b){b.onclick=function(){irPara(+b.dataset.i)}});
  var resp=ESTADO.itens.filter(function(it){return it.resp}).length;
- $("#nav-resumo").textContent=resp+" de "+ESTADO.itens.length+" respondidas";
+ var tot=ESTADO.itens.length;
+ $("#nav-resumo").textContent=resp+" de "+tot+" respondidas";
+ $("#prog-txt").textContent=resp+" / "+tot;
+ $("#prog-i").style.width=(tot?Math.round(resp*100/tot):0)+"%";
 }
-function desenharQuestao(){
- var it=ESTADO.itens[ESTADO.atual],q=qById(it.id);
- if(!q){$("#qbox").innerHTML='<p class="warn">Questão não encontrada no banco.</p>';return}
+function irPara(i){
+ ESTADO.atual=i;
+ var c=document.getElementById("qc-"+i);
+ if(c){c.scrollIntoView({behavior:"smooth",block:"start"});
+  $$("#qbox .qcard").forEach(function(x){x.classList.remove("alvo")});
+  c.classList.add("alvo");
+  setTimeout(function(){c.classList.remove("alvo")},1600);}
+ $$("#navgrid .nv").forEach(function(b,ix){b.classList.toggle("cur",ix===i)});
+}
+function abrirRevisao(i){
+ MODO_REVISAO=true;ESTADO.atual=i||0;
+ tela("tela-prova");
+ $("#btn-finalizar").hidden=true;$("#barra").hidden=true;
+ $("#btn-sair").classList.remove("hid");
+ desenharNav();desenharTodas();
+ if(i)setTimeout(function(){irPara(i)},120);
+}
+function primeiraEmBranco(){
+ for(var i=0;i<ESTADO.itens.length;i++)if(!ESTADO.itens[i].resp){irPara(i);return}
+ irPara(ESTADO.itens.length-1);
+}
+function cartaoHTML(i){
+ var it=ESTADO.itens[i],q=qById(it.id);
+ if(!q)return '<article class="qcard" id="qc-'+i+'"><p class="warn">Questão '+(i+1)+' não encontrada no banco.</p></article>';
  var revelar=ESTADO.finalizado||MODO_REVISAO||(ESTADO.treino&&it.resp);
+ var cab='<div class="qnum"><b>Questão '+(i+1)+'</b><span>/ '+ESTADO.itens.length+'</span></div>';
  var meta='<div class="qmeta"><span class="tag disc">'+esc(it.bloco)+'</span>'+
   (assuntosDe(q).length?'<span class="tag">'+esc(assuntosDe(q).slice(0,2).join(" · "))+'</span>':'')+
   (q.banca?'<span class="tag">'+esc(q.banca)+'</span>':'')+
   (q.ano?'<span class="tag">'+esc(q.ano)+'</span>':'')+
   (q.orgao?'<span class="tag">'+esc(q.orgao)+'</span>':'')+
   '<span class="tag code">'+esc(q.cod)+'</span></div>';
- var cab='<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px"><h2 style="font-size:19px">Questão '+(ESTADO.atual+1)+'<span style="color:var(--muted);font-weight:500"> / '+ESTADO.itens.length+'</span></h2></div>';
- var apoio=q.apoio?'<div class="apoio">'+q.apoio+'</div>':'';
+ var apoio="";
+ if(q.apoio){
+  var ant=null;
+  for(var k=i-1;k>=0&&k>=i-12;k--){var qa=qById(ESTADO.itens[k].id);if(qa&&qa.apoio===q.apoio){ant=k;break}}
+  apoio=(ant===null)?'<div class="apoio">'+q.apoio+'</div>'
+   :'<p class="apoio-ref">Usa o mesmo texto da questão '+(ant+1)+'.</p>';
+ }
  var enun='<div class="enun tblwrap">'+q.enunciado+'</div>';
  var alts='<div class="alts">'+q.alts.map(function(a){
    var cls="alt",pressed=(it.resp===a.L);
@@ -483,24 +537,50 @@ function desenharQuestao(){
    (it.resp===q.gab?"Você acertou. Gabarito: "+q.gab:"Você marcou "+it.resp+". Gabarito: "+q.gab)+'</div>'}
  else if(revelar){fb='<div class="feedback bad">Em branco. Gabarito: '+q.gab+'</div>'}
  var prova=q.prova?'<div style="margin-top:14px;font-size:12.5px;color:var(--muted)">'+esc(q.prova)+'</div>':'';
- $("#qbox").innerHTML=cab+meta+apoio+enun+alts+fb+prova;
- $$("#qbox .alt").forEach(function(d){
-  d.onclick=function(ev){if(ev.target.classList.contains("risca"))return;escolher(d.dataset.l)};
-  d.onkeydown=function(ev){if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();escolher(d.dataset.l)}};
- });
- $$("#qbox .risca").forEach(function(b){b.onclick=function(ev){ev.stopPropagation();
-  var L=b.dataset.l,ix=it.riscadas.indexOf(L);
-  if(ix>=0)it.riscadas.splice(ix,1);else it.riscadas.push(L);
-  salvar();desenharQuestao();}});
- hidratarImagens($("#qbox"));
- $("#btn-prev").disabled=ESTADO.atual===0;
- $("#btn-next").disabled=ESTADO.atual===ESTADO.itens.length-1;
+ return '<article class="qcard" id="qc-'+i+'" data-i="'+i+'">'+cab+meta+apoio+enun+alts+fb+prova+'</article>';
 }
-function escolher(L){
+function desenharTodas(){
+ var html="";
+ for(var i=0;i<ESTADO.itens.length;i++)html+=cartaoHTML(i);
+ $("#qbox").innerHTML=html;
+ hidratarImagens($("#qbox"));
+}
+function redesenharCartao(i){
+ var antigo=document.getElementById("qc-"+i);
+ if(!antigo){desenharTodas();return}
+ var tmp=document.createElement("div");tmp.innerHTML=cartaoHTML(i);
+ var novo=tmp.firstChild;
+ antigo.replaceWith(novo);
+ hidratarImagens(novo);
+}
+function indiceDe(el){
+ var c=el.closest(".qcard");
+ return c?parseInt(c.dataset.i,10):-1;
+}
+function ligarDelegacao(){
+ var box=$("#qbox");
+ box.addEventListener("click",function(ev){
+  var risca=ev.target.closest(".risca");
+  if(risca){ev.preventDefault();ev.stopPropagation();
+   var i=indiceDe(risca);if(i<0)return;
+   var it=ESTADO.itens[i],L=risca.dataset.l,ix=it.riscadas.indexOf(L);
+   if(ix>=0)it.riscadas.splice(ix,1);else it.riscadas.push(L);
+   salvar();redesenharCartao(i);return;}
+  var alt=ev.target.closest(".alt");
+  if(alt){var j=indiceDe(alt);if(j>=0)escolher(j,alt.dataset.l)}
+ });
+ box.addEventListener("keydown",function(ev){
+  if(ev.key!=="Enter"&&ev.key!==" ")return;
+  var alt=ev.target.closest(".alt");if(!alt)return;
+  ev.preventDefault();var j=indiceDe(alt);if(j>=0)escolher(j,alt.dataset.l);
+ });
+}
+function escolher(i,L){
  if(ESTADO.finalizado||MODO_REVISAO)return;
- var it=ESTADO.itens[ESTADO.atual];
+ var it=ESTADO.itens[i];
  it.resp=(it.resp===L?null:L);
- salvar();desenharNav();desenharQuestao();
+ ESTADO.atual=i;
+ salvar();redesenharCartao(i);desenharNav();
 }
 
 /* ---------- correção ---------- */
@@ -529,7 +609,7 @@ function calcular(){
 }
 function desenharResultado(res){
  tela("tela-result");
- $("#btn-sair").classList.add("hid");$("#chip-timer").classList.add("hid");
+ $("#btn-sair").classList.add("hid");$("#chip-timer").classList.add("hid");$("#barra").hidden=true;
  var p=pct(res.acertos,res.total);
  $("#res-acertos").textContent=res.acertos+" / "+res.total;
  $("#res-sub").textContent="acertos · "+res.brancos+" em branco";
@@ -570,7 +650,7 @@ function desenharResultado(res){
  ligarGotos();
 }
 function ligarGotos(){
- $$("#res-erradas [data-goto]").forEach(function(b){b.onclick=function(){MODO_REVISAO=true;ESTADO.atual=+b.dataset.goto;tela("tela-prova");$("#btn-finalizar").hidden=true;$("#btn-sair").classList.remove("hid");desenharNav();desenharQuestao()}});
+ $$("#res-erradas [data-goto]").forEach(function(b){b.onclick=function(){abrirRevisao(+b.dataset.goto)}});
 }
 function assuntosDe(q){
  return (q.assuntos||[]).map(function(a){return String(a).replace(/[\s,·;]+$/,"").replace(/^[\s,·;]+/,"").trim()}).filter(Boolean);
@@ -590,8 +670,10 @@ function desenharHist(){
 function ligarEventos(){
  $("#btn-gerar").onclick=gerar;
  $("#op-inedito").onchange=somar;
- $("#btn-prev").onclick=function(){if(ESTADO.atual>0){ESTADO.atual--;desenharNav();desenharQuestao()}};
- $("#btn-next").onclick=function(){if(ESTADO.atual<ESTADO.itens.length-1){ESTADO.atual++;desenharNav();desenharQuestao()}};
+ $("#btn-pular").onclick=primeiraEmBranco;
+ $("#btn-pular2").onclick=primeiraEmBranco;
+ $("#btn-finalizar2").onclick=function(){$("#btn-finalizar").click();$("#btn-finalizar").scrollIntoView({behavior:"smooth",block:"center"})};
+ ligarDelegacao();
  $("#btn-finalizar").onclick=function(){
   var faltam=ESTADO.itens.filter(function(it){return !it.resp}).length;
   if(faltam&&!$("#btn-finalizar").dataset.conf){
@@ -606,7 +688,7 @@ function ligarEventos(){
  $("#btn-sair").onclick=function(){
   if(TIMER)clearInterval(TIMER);
   if(ESTADO&&ESTADO.finalizado){desenharResultado(calcular());return}
-  salvar();$("#btn-sair").classList.add("hid");$("#chip-timer").classList.add("hid");
+  salvar();$("#btn-sair").classList.add("hid");$("#chip-timer").classList.add("hid");$("#barra").hidden=true;
   $("#btn-retomar").hidden=false;tela("tela-inicio");
  };
  $("#btn-retomar").onclick=function(){
@@ -615,7 +697,7 @@ function ligarEventos(){
   if(ESTADO.finalizado){desenharResultado(calcular())}else{abrirProva()}
  };
  $("#btn-novo").onclick=function(){tela("tela-inicio");$("#btn-retomar").hidden=true;montarMatriz();aplicarPreset()};
- $("#btn-rever").onclick=function(){MODO_REVISAO=true;ESTADO.atual=0;tela("tela-prova");$("#btn-finalizar").hidden=true;$("#btn-sair").classList.remove("hid");desenharNav();desenharQuestao()};
+ $("#btn-rever").onclick=function(){abrirRevisao(0)};
  $("#btn-hist").onclick=function(){var b=$("#box-hist");b.hidden=!b.hidden;if(!b.hidden)desenharHist()};
  $("#btn-zerar").onclick=function(){
   var b=$("#btn-zerar");
@@ -633,13 +715,22 @@ function ligarEventos(){
   }else fallbackCopia(txt);
  };
  document.addEventListener("keydown",function(e){
-  if($("#tela-prova").hidden||!ESTADO)return;
+  if($("#tela-prova").hidden||!ESTADO||MODO_REVISAO||ESTADO.finalizado)return;
   if(e.target&&/input|textarea/i.test(e.target.tagName))return;
-  if(e.key==="ArrowRight")$("#btn-next").click();
-  else if(e.key==="ArrowLeft")$("#btn-prev").click();
-  else if(/^[a-eA-E]$/.test(e.key))escolher(e.key.toUpperCase());
+  if(!/^[a-eA-E]$/.test(e.key))return;
+  var foco=document.activeElement&&document.activeElement.closest?document.activeElement.closest(".qcard"):null;
+  var alvo=foco||cartaoVisivel();
+  if(!alvo)return;
+  var i=parseInt(alvo.dataset.i,10);
+  if(i>=0){e.preventDefault();escolher(i,e.key.toUpperCase())}
  });
  window.addEventListener("beforeunload",salvar);
+}
+function cartaoVisivel(){
+ var cards=$$("#qbox .qcard");
+ for(var i=0;i<cards.length;i++){var r=cards[i].getBoundingClientRect();
+  if(r.bottom>90&&r.top<window.innerHeight*0.6)return cards[i];}
+ return cards[0]||null;
 }
 function fallbackCopia(txt){
  var ta=document.createElement("textarea");ta.value=txt;ta.style.position="fixed";ta.style.opacity="0";
